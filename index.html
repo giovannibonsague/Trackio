@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Trackio</title>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet"/>
-<style>
+<style id="app-style">
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:#fff;color:#0a0a0a;font-family:'Instrument Sans',sans-serif;font-size:14px;overflow:hidden}
 .app{display:flex;height:100vh}
@@ -48,6 +48,8 @@ html,body{height:100%;background:#fff;color:#0a0a0a;font-family:'Instrument Sans
 /* CARD */
 .card{background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:18px 20px;margin-bottom:12px}
 .ch{font-size:10px;color:#bbb;text-transform:uppercase;letter-spacing:.07em;font-weight:500;margin-bottom:14px}
+.ch-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.ch-row .ch{margin-bottom:0}
 
 /* FORM */
 .fr{display:flex;gap:9px;align-items:flex-end;flex-wrap:wrap}
@@ -62,6 +64,8 @@ button:hover{opacity:.75}
 button.s{background:#f0f0f0;color:#0a0a0a}
 button.s:hover{background:#e8e8e8;opacity:1}
 button.xs{padding:4px 8px;font-size:11px;border-radius:4px}
+button.pipbtn{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;font-size:12px}
+button.pipbtn svg{width:13px;height:13px}
 
 /* LIST ROWS */
 .row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f2f2f2;gap:10px}
@@ -76,6 +80,14 @@ button.xs{padding:4px 8px;font-size:11px;border-radius:4px}
 /* TIMER */
 .tnum{font-family:'Instrument Serif',serif;font-size:60px;letter-spacing:.03em;text-align:center;padding:20px 0 18px;line-height:1}
 .tbtns{display:flex;gap:8px;justify-content:center}
+.pip-note{font-size:11px;color:#bbb;text-align:center;margin-top:12px}
+.pip-note.hide{display:none}
+
+/* PiP window (also used inside the floating window) */
+.pipwrap{height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:14px;background:#fff}
+.pipsubj{font-size:11px;color:#aaa;text-transform:uppercase;letter-spacing:.07em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pipwrap .tnum{font-size:46px;padding:0}
+.pipwrap .tbtns{flex-wrap:wrap}
 
 /* HABITS */
 .hg{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:14px}
@@ -170,7 +182,13 @@ input[type=range]{accent-color:#0a0a0a;width:100%;cursor:pointer;margin-top:5px}
       <div class="panel" id="p-study">
         <div class="stats" id="study-stats"></div>
         <div class="card">
-          <div class="ch">Timer</div>
+          <div class="ch-row">
+            <div class="ch">Timer</div>
+            <button class="s xs pipbtn" id="pipbtn" onclick="togglePiP()" title="Float the timer above other windows">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><rect x="8" y="8" width="5" height="3.5" rx=".8" fill="currentColor" stroke="none"/></svg>
+              <span id="pipbtn-label">Pop out</span>
+            </button>
+          </div>
           <div class="fr" style="margin-bottom:14px">
             <div class="fg"><label>Subject</label><input id="study-subj" placeholder="e.g. Math, Biology…"/></div>
           </div>
@@ -180,6 +198,7 @@ input[type=range]{accent-color:#0a0a0a;width:100%;cursor:pointer;margin-top:5px}
             <button class="s" onclick="resetTimer()">Reset</button>
             <button class="s" id="logbtn" style="display:none" onclick="logSession()">Log session</button>
           </div>
+          <div class="pip-note" id="pip-note">Tip: “Pop out” floats the timer so you can control it from other tabs.</div>
         </div>
         <div class="card"><div class="ch">Sessions</div><div id="study-list"></div></div>
       </div>
@@ -230,20 +249,45 @@ input[type=range]{accent-color:#0a0a0a;width:100%;cursor:pointer;margin-top:5px}
   </div>
 </div>
 
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, push, remove, update, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+<script>
+// Show real error details instead of an opaque "Script error."
+function showBanner(msg){
+  let b=document.getElementById('err-banner');
+  if(!b){b=document.createElement('div');b.id='err-banner';
+    b.style.cssText='position:fixed;left:12px;right:12px;bottom:12px;z-index:99;background:#0a0a0a;color:#fff;border-radius:8px;padding:10px 14px;font-size:12px;line-height:1.4';
+    document.body.appendChild(b);}
+  b.textContent=msg;
+}
+window.addEventListener('error',e=>showBanner('Error: '+(e.message||'unknown')+(e.filename?' ('+e.filename.split('/').pop()+':'+e.lineno+')':'')));
+window.addEventListener('unhandledrejection',e=>showBanner('Error: '+((e.reason&&e.reason.message)||e.reason)));
 
-const app = initializeApp({
-  apiKey:"AIzaSyCF7rPNyOFXh92yZF0w0Ke-wnbPUw24BpA",
-  authDomain:"grouppro-6cd94.firebaseapp.com",
-  databaseURL:"https://grouppro-6cd94-default-rtdb.firebaseio.com",
-  projectId:"grouppro-6cd94",
-  storageBucket:"grouppro-6cd94.firebasestorage.app",
-  messagingSenderId:"330668974845",
-  appId:"1:330668974845:web:016cf48ade61de9c5e1494"
-});
-const db = getDatabase(app);
+// Local storage "database" (saved on this device, no account or server needed)
+const STORE_KEY='trackio_db';
+let store={};
+try{store=JSON.parse(localStorage.getItem(STORE_KEY)||'{}')||{};}catch(e){store={};}
+const listeners={};
+function persist(){try{localStorage.setItem(STORE_KEY,JSON.stringify(store));}catch(e){showBanner('Couldn’t save: storage is full or blocked.');}}
+function snapshot(coll){
+  const data=store[coll]||{};
+  return {forEach:fn=>{Object.keys(data).forEach(k=>{fn({key:k,val:()=>data[k]});});}};
+}
+function notify(coll){(listeners[coll]||[]).forEach(cb=>cb(snapshot(coll)));}
+const db=null;
+const ref=(d,path)=>path;
+const onValue=(path,cb)=>{(listeners[path]=listeners[path]||[]).push(cb);cb(snapshot(path));};
+const push=(path,val)=>{
+  const id=Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  (store[path]=store[path]||{})[id]=val;persist();notify(path);
+};
+const remove=path=>{
+  const [coll,id]=path.split('/');
+  if(id){if(store[coll])delete store[coll][id];}else delete store[coll];
+  persist();notify(coll);
+};
+const update=(path,vals)=>{
+  const [coll,id]=path.split('/');
+  if(store[coll]&&store[coll][id]){Object.assign(store[coll][id],vals);persist();notify(coll);}
+};
 const today = new Date().toISOString().split('T')[0];
 const now = new Date();
 document.getElementById('sb-day').textContent = now.toLocaleDateString('en-US',{weekday:'long'});
@@ -290,26 +334,195 @@ function renderExp(){
   :'<div class="empty">Nothing logged yet</div>';
 }
 
-// STUDY
-let timerSec=0,running=false,tInt=null,sessions=[];
+// STUDY — timestamp-based so it stays accurate even when the tab is in the background
+let accSec=0,startedAt=null,sessions=[];
+let pipWin=null,pipVideo=null,pipCanvas=null,pipMode=null; // pipMode: 'doc' | 'video' | null
+const hasDocPiP='documentPictureInPicture' in window;
+const canCapture=typeof HTMLCanvasElement.prototype.captureStream==='function';
+const vProbe=document.createElement('video');
+const hasVideoPiP=canCapture&&(!!document.pictureInPictureEnabled||typeof vProbe.webkitSetPresentationMode==='function');
+
+// Persist the timer so it survives switching apps, iOS reloading the tab, or a refresh
+function saveTimer(){try{localStorage.setItem('trackio_timer',JSON.stringify({accSec,startedAt,subj:document.getElementById('study-subj').value}))}catch(e){}}
+try{
+  const saved=JSON.parse(localStorage.getItem('trackio_timer')||'null');
+  if(saved){accSec=saved.accSec||0;startedAt=saved.startedAt||null;document.getElementById('study-subj').value=saved.subj||'';}
+}catch(e){}
+document.getElementById('study-subj').addEventListener('input',saveTimer);
+// Snap the display to the true time the moment you come back to the app/tab
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshTimer();});
+window.addEventListener('pageshow',()=>refreshTimer());
+
 onValue(ref(db,'study_sessions'),s=>{sessions=[];s.forEach(c=>sessions.push({id:c.key,...c.val()}));renderStudy()});
+
+function p2(n){return String(n).padStart(2,'0')}
+function elapsed(){return accSec+(startedAt?(Date.now()-startedAt)/1000:0)}
+function fmt(sec){sec=Math.floor(sec);return `${p2(Math.floor(sec/3600))}:${p2(Math.floor((sec%3600)/60))}:${p2(sec%60)}`}
+function isRunning(){return startedAt!==null}
+function subject(){return document.getElementById('study-subj').value.trim()}
+
+// Updates every place the timer is shown (main page, floating window, video fallback)
+function refreshTimer(){
+  const t=fmt(elapsed());
+  const running=isRunning();
+  const hasTime=elapsed()>0;
+  const label=running?'Pause':(hasTime?'Resume':'Start');
+  document.getElementById('tdisp').textContent=t;
+  document.getElementById('tbtn').textContent=label;
+  document.getElementById('logbtn').style.display=hasTime?'':'none';
+  document.title=running?`${t} · Trackio`:'Trackio';
+
+  if(pipMode==='doc'&&pipWin&&!pipWin.closed){
+    const d=pipWin.document;
+    const set=(id,v)=>{const el=d.getElementById(id);if(el&&el.textContent!==v)el.textContent=v};
+    set('pip-time',t);
+    set('pip-toggle',label);
+    set('pip-subj',subject()||'Study session');
+    const lb=d.getElementById('pip-log');
+    if(lb)lb.style.display=hasTime?'':'none';
+  }
+  if(pipMode==='video')drawVideoFrame(t);
+}
+// The main interval drives the page; the floating window runs its own interval too,
+// because background tabs throttle timers but a visible PiP window does not.
+setInterval(refreshTimer,250);
+
 window.toggleTimer=function(){
-  if(!running){
-    running=true;document.getElementById('tbtn').textContent='Pause';
-    document.getElementById('logbtn').style.display='';
-    tInt=setInterval(()=>{timerSec++;const h=Math.floor(timerSec/3600),m=Math.floor((timerSec%3600)/60),s=timerSec%60;
-      document.getElementById('tdisp').textContent=`${p2(h)}:${p2(m)}:${p2(s)}`;},1000);
-  } else {running=false;clearInterval(tInt);document.getElementById('tbtn').textContent='Resume';}
+  if(isRunning()){accSec=elapsed();startedAt=null;}
+  else{startedAt=Date.now();}
+  saveTimer();
+  refreshTimer();
+  if(pipMode==='video')syncMediaSession();
 };
-window.resetTimer=function(){clearInterval(tInt);running=false;timerSec=0;document.getElementById('tdisp').textContent='00:00:00';document.getElementById('tbtn').textContent='Start';document.getElementById('logbtn').style.display='none';};
+window.resetTimer=function(){accSec=0;startedAt=null;saveTimer();refreshTimer();if(pipMode==='video')syncMediaSession();};
 window.logSession=function(){
-  const subj=document.getElementById('study-subj').value.trim()||'General';
-  if(timerSec<5)return;
-  push(ref(db,'study_sessions'),{subject:subj,minutes:Math.max(1,Math.round(timerSec/60)),date:today,ts:Date.now()});
+  const sec=elapsed();
+  if(sec<5)return;
+  const subj=subject()||'General';
+  push(ref(db,'study_sessions'),{subject:subj,minutes:Math.max(1,Math.round(sec/60)),date:today,ts:Date.now()});
   window.resetTimer();
 };
 window.delSession=id=>remove(ref(db,'study_sessions/'+id));
-function p2(n){return String(n).padStart(2,'0')}
+
+// ---- Picture-in-Picture ----
+function setPipUI(on){
+  document.getElementById('pipbtn-label').textContent=on?'Close pop-out':'Pop out';
+  document.getElementById('pip-note').classList.toggle('hide',on);
+}
+
+window.togglePiP=async function(){
+  if(pipMode){closePiP();return;}
+  try{
+    if(hasDocPiP)await openDocPiP();
+    else if(hasVideoPiP)await openVideoPiP();
+    else alert('Picture-in-picture isn’t supported in this browser. Chrome or Edge works best.');
+  }catch(err){
+    console.error(err);
+    alert('Couldn’t open the pop-out: '+(err&&err.message?err.message:err));
+  }
+};
+
+function closePiP(){
+  if(pipMode==='doc'&&pipWin&&!pipWin.closed)pipWin.close();
+  if(pipMode==='video'){
+    if(document.pictureInPictureElement)document.exitPictureInPicture().catch(()=>{});
+    else if(pipVideo&&pipVideo.webkitSetPresentationMode)pipVideo.webkitSetPresentationMode('inline');
+    if(pipVideo){pipVideo.pause();pipVideo.srcObject=null;}
+  }
+  pipMode=null;pipWin=null;setPipUI(false);
+}
+
+// Preferred: Document Picture-in-Picture (Chrome/Edge 116+) — a real mini window with working buttons
+async function openDocPiP(){
+  const w=await documentPictureInPicture.requestWindow({width:300,height:210});
+  pipWin=w;pipMode='doc';
+
+  // carry over fonts + styles
+  document.querySelectorAll('link[rel="stylesheet"]').forEach(l=>{
+    const c=w.document.createElement('link');c.rel='stylesheet';c.href=l.href;w.document.head.appendChild(c);
+  });
+  const st=w.document.createElement('style');
+  st.textContent=document.getElementById('app-style').textContent;
+  w.document.head.appendChild(st);
+
+  w.document.body.style.overflow='hidden';
+  w.document.body.innerHTML=`
+    <div class="pipwrap">
+      <div class="pipsubj" id="pip-subj"></div>
+      <div class="tnum" id="pip-time">00:00:00</div>
+      <div class="tbtns">
+        <button id="pip-toggle">Start</button>
+        <button class="s" id="pip-reset">Reset</button>
+        <button class="s" id="pip-log" style="display:none">Log</button>
+      </div>
+    </div>`;
+  w.document.getElementById('pip-toggle').onclick=()=>window.toggleTimer();
+  w.document.getElementById('pip-reset').onclick=()=>window.resetTimer();
+  w.document.getElementById('pip-log').onclick=()=>window.logSession();
+
+  // un-throttled ticking from the PiP window itself
+  const iv=w.setInterval(refreshTimer,250);
+  w.addEventListener('pagehide',()=>{
+    w.clearInterval(iv);
+    if(pipMode==='doc'){pipMode=null;pipWin=null;setPipUI(false);}
+  });
+  setPipUI(true);
+  refreshTimer();
+}
+
+// Fallback: video Picture-in-Picture (Safari / Firefox) — shows the time; play/pause buttons control the timer
+async function openVideoPiP(){
+  if(!pipCanvas){pipCanvas=document.createElement('canvas');pipCanvas.width=480;pipCanvas.height=270;}
+  if(!pipVideo){
+    pipVideo=document.createElement('video');
+    pipVideo.muted=true;pipVideo.playsInline=true;
+    pipVideo.style.cssText='position:fixed;width:1px;height:1px;opacity:0;pointer-events:none';
+    document.body.appendChild(pipVideo);
+    pipVideo.addEventListener('leavepictureinpicture',()=>{
+      if(pipMode==='video'){pipMode=null;setPipUI(false);pipVideo.pause();}
+    });
+    // let the native PiP play/pause button drive the timer
+    pipVideo.addEventListener('pause',()=>{if(pipMode==='video'&&isRunning())window.toggleTimer();});
+    pipVideo.addEventListener('play',()=>{if(pipMode==='video'&&!isRunning())window.toggleTimer();});
+  }
+  pipMode='video';
+  drawVideoFrame(fmt(elapsed()));
+  pipVideo.srcObject=pipCanvas.captureStream(5);
+  await pipVideo.play().catch(()=>{});
+  if(typeof pipVideo.requestPictureInPicture==='function'){
+    await pipVideo.requestPictureInPicture();
+  }else if(typeof pipVideo.webkitSetPresentationMode==='function'){
+    // iPhone / older iOS Safari
+    pipVideo.webkitSetPresentationMode('picture-in-picture');
+    pipVideo.addEventListener('webkitpresentationmodechanged',()=>{
+      if(pipVideo.webkitPresentationMode!=='picture-in-picture'&&pipMode==='video'){pipMode=null;setPipUI(false);pipVideo.pause();}
+    });
+  }else throw new Error('Picture-in-picture isn’t available here');
+  if('mediaSession' in navigator){
+    navigator.mediaSession.setActionHandler('play',()=>{if(!isRunning())window.toggleTimer();});
+    navigator.mediaSession.setActionHandler('pause',()=>{if(isRunning())window.toggleTimer();});
+  }
+  setPipUI(true);
+  syncMediaSession();
+}
+function syncMediaSession(){
+  if(!pipVideo||pipMode!=='video')return;
+  // keep the video's play state aligned with the timer so the PiP button shows the right icon
+  if(isRunning()&&pipVideo.paused){pipVideo.play().catch(()=>{});}
+  else if(!isRunning()&&!pipVideo.paused){pipVideo.pause();}
+}
+function drawVideoFrame(t){
+  if(!pipCanvas)return;
+  const c=pipCanvas.getContext('2d');
+  c.fillStyle='#fff';c.fillRect(0,0,480,270);
+  c.fillStyle='#aaa';c.font='500 20px "Instrument Sans",sans-serif';c.textAlign='center';
+  c.fillText((subject()||'Study session').toUpperCase().slice(0,28),240,90);
+  c.fillStyle='#0a0a0a';c.font='96px "Instrument Serif",serif';
+  c.fillText(t,240,175);
+  c.fillStyle='#bbb';c.font='500 18px "Instrument Sans",sans-serif';
+  c.fillText(isRunning()?'Running':(elapsed()>0?'Paused':'Ready'),240,225);
+}
+
 function renderStudy(){
   const total=sessions.reduce((s,e)=>s+e.minutes,0);
   const tod=sessions.filter(e=>e.date===today).reduce((s,e)=>s+e.minutes,0);
@@ -419,6 +632,8 @@ function renderSnacks(){
   document.getElementById('snack-break').innerHTML=Object.entries(bd).sort((a,b)=>b[1].rev-a[1].rev).map(([n,v])=>`
     <div class="br"><span class="brn">${n}</span><div class="brt"><div class="brf" style="width:${Math.round((v.rev/maxR)*100)}%"></div></div><span class="brv">$${v.rev.toFixed(2)}</span></div>`).join('')||'<div class="empty">No data</div>';
 }
+
+refreshTimer();
 </script>
 </body>
 </html>
